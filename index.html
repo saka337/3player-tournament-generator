@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="1位勝ち抜き式3人制トーナメントを自動生成するツール。表示は簡易的。参加者が偶数の場合、「分身」で奇数化して調整します。">
+ 	<meta name="twitter:card" content="summary">
+	<meta property="og:title" content="3人制トーナメントジェネレーターβ">
+	<meta property="og:description" content="1位勝ち抜き式3人制トーナメントを自動生成するツール。表示は簡易的。参加者が偶数の場合、「分身」で奇数化して調整します。">
+    <title>3人制トーナメントジェネレーターβ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        indigo: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'BIZ UDPGothic', 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #f8fafc;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .bracket-container {
+            display: block;
+            padding: 40px 20px; /* 上下のパディングを増やし、左右を調整 */
+            overflow-y: auto; /* 縦方向のスクロールを有効にする */
+            overflow-x: hidden; /* 横方向のスクロールは不要 */
+            height: 100%;
+        }
+
+        .round-column {
+            display: flex; /* マッチを横に並べるためにFlexboxを再適用 */
+            flex-direction: row; /* 横並び */
+            flex-wrap: wrap; /* 折り返しを有効にする */
+            justify-content: flex-start; /* 左寄せ */
+            margin-bottom: 60px; /* 各ラウンドの下部にスペース */
+            min-width: auto;
+            width: 100%; /* 全幅を使用 */
+            position: relative;
+        }
+
+        /* Connecting Lines (Simple implementation for visual flow) */
+        .round-column:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            right: -30px;
+            top: 50px;
+            bottom: 50px;
+            width: 2px;
+            background: #e2e8f0;
+            z-index: 0;
+            display: none; /* Hidden for now, complex to draw purely with CSS for dynamic 3-branching */
+        }
+        .round-column > h3 { /* h3タグをヘッダーとして使っていた場合 */
+            margin-top: 0;
+            margin-bottom: 20px;
+            width: 100%; /* ヘッダーが折り返しに影響されないように全幅にする */
+        }
+        .match-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1);
+            margin: 12px; /* 上下左右のマージン */
+            width: 300px; /* カードの幅を固定 */
+            flex-shrink: 0; /* 折り返しを効かせるため */
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid #e2e8f0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .match-card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-color: #cbd5e1;
+            transform: translateY(-2px);
+        }
+        .round-header {
+            text-align: center;
+            margin-bottom: 20px;
+            position: sticky;
+            top: -1px; /* 少し上に配置して、スクロール時に見切れにくくする */
+            background: #f8fafc;
+            padding: 10px 0;
+            z-index: 20;
+            border-bottom: 1px solid #e2e8f0;
+            width: 100%; /* .round-column の子要素で全幅を使う */
+            box-sizing: border-box;
+        }
+        
+        /* BYESコンテナのスタイル調整（横並びとマージンの設定） */
+        .bye-container {            
+            display: flex; /* Flexboxを有効化 */
+            flex-wrap: wrap; /* 折り返しを有効化 */
+            align-items: center; /* 縦方向の中央寄せ */
+            gap: 8px 12px; /* 項目間のスペース（上下 8px, 左右 12px） */
+
+            width: 100%; /* 親要素(round-column)に対して全幅を使用 */
+            margin-top: 32px; /* mt-8 相当 */
+            margin-bottom: 0; /* 不要な下マージンを削除 */
+            padding: 12px 16px; /* パディングを調整 */
+
+            background: #f1f5f9; /* bg-slate-100 相当 */
+            border-radius: 8px; /* rounded-lg 相当 */
+            border: 1px dashed #cbd5e1; /* border-slate-300 相当 */
+        }
+
+        /* BYE項目自体のスタイル調整 */
+        .bye-item {
+            /* 横並びのための調整 */
+            padding: 4px 8px;
+            background-color: white;
+            border-radius: 4px;
+            font-size: 0.75rem; /* text-xs 相当 */
+            color: #64748b; /* text-slate-500 相当 */
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        /* ヘッダー部分はブロック要素のまま維持 */
+        .bye-header {
+            width: 100%;
+            font-size: 0.75rem; /* text-xs 相当 */
+            font-weight: bold;
+            color: #94a3b8; /* text-slate-400 相当 */
+            text-transform: uppercase;
+            margin-bottom: 8px; /* mb-2 相当 */
+        }
+        
+        .player-slot {
+            font-family: 'BIZ UDGothic', monospace;
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.15s;
+            height: 48px;
+            position: relative;
+        }
+
+        .player-slot:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+        .player-slot:last-child { border-bottom: none; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+        
+        .player-slot:hover:not(.empty):not(.bye) { background-color: #f8fafc; }
+        
+        .player-slot.winner { 
+            background-color: #f0fdf4; 
+            color: #15803d; 
+            font-weight: 600;
+        }
+        .player-slot.winner::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 4px;
+            background-color: #22c55e;
+        }
+        
+        .player-slot.bye { 
+            color: #94a3b8; 
+            background-color: #f8fafc;
+            cursor: default;
+            font-size: 0.9em;
+        }
+
+        .player-slot.empty {
+            color: #cbd5e1;
+            cursor: default;
+        }
+
+        .player-slot.clone {
+            color: #7c3aed; /* Violet */
+        }
+        .player-slot.clone::after {
+            content: '分身';
+            font-size: 0.6rem;
+            background: #7c3aed;
+            color: white;
+            padding: 2px 4px;
+            border-radius: 4px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .match-info {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #64748b;
+            padding: 6px 14px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Champion Animation */
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .champion-card {
+            animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            border: 2px solid #fbbf24;
+            margin: 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="flex flex-col h-screen">
+        <!-- Header -->
+        <header class="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center z-20 shrink-0">
+            <div class="flex items-center gap-3">
+                <div class="bg-indigo-600 w-8 h-8 rounded flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <g transform="rotate(15 12 12)">
+                        <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+                        <circle cx="16" cy="16" r="1.5" fill="currentColor"/>
+                        <circle cx="16" cy="8" r="1.5" fill="currentColor"/>
+                        <circle cx="8" cy="16" r="1.5" fill="currentColor"/>
+                      </g>
+                    </svg>
+                </div>
+                <h1 class="font-bold text-lg tracking-wide">Triple Battle Generator</h1>
+                <span class="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">完全3人制</span>
+            </div>
+            <div class="flex gap-2">
+                <input type="file" id="fileInput" accept=".json" class="hidden">
+                <button onclick="document.getElementById('fileInput').click()" class="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm transition flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                      <path d="M12 11v6"/>
+                      <path d="m9 14 3-3 3 3"/>
+                    </svg>
+                    読込
+                </button>
+                <button id="btnSave" class="bg-slate-700 text-slate-500 px-3 py-1.5 rounded text-sm transition flex items-center gap-2 cursor-not-allowed" disabled>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                      <polyline points="17 21 17 13 7 13 7 21"/>
+                      <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    保存
+                </button>
+            </div>
+        </header>
+
+        <div class="flex flex-1 overflow-hidden">
+            <!-- Sidebar -->
+            <aside class="w-80 bg-white border-r border-slate-200 flex flex-col z-10 shadow-lg shrink-0">
+                <div class="p-5 flex-1 overflow-y-auto">
+                    <label class="block text-slate-700 text-sm font-bold mb-2 flex justify-between">
+                        <span>&#x1f465; 参加者リスト</span>
+                        <span id="countBadge" class="bg-slate-100 px-2 rounded text-xs py-0.5 text-slate-500">0名</span>
+                    </label>
+                    <textarea id="inputNames" 
+                        class="w-full h-[60%] p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none font-mono leading-relaxed mb-4"
+                        placeholder="一行に一人ずつ名前を入力&#10;Aさん&#10;Bさん&#10;Cさん..."></textarea>
+                    
+                    <label class="inline-flex items-center cursor-pointer pb-3">
+                        <input type="checkbox" id="isShuffle" class="form-checkbox text-blue-600">
+                        <span class="ml-2 text-gray-700">シャッフル</span>
+                    </label>
+                    
+                    <div id="statusMessage" class="hidden mb-4 p-3 rounded text-xs flex items-start gap-2">
+                        &#9432;
+                        <span id="statusText"></span>
+                    </div>
+
+                    <button id="btnGenerate" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-lg shadow-md transition transform active:scale-[0.98] flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M8 1l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3zM12 10l.5 1.5L14 12l-1.5.5L12 14l-.5-1.5L10 12l1.5-.5L12 10z"/>
+                        </svg>
+                        トーナメント生成
+                    </button>
+
+                    <div class="mt-6 border-t border-slate-100 pt-4">
+                        <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">ロジック仕様</h4>
+                        <ul class="text-xs text-slate-500 space-y-2">
+                            <li class="flex gap-2">
+                                &#10004;
+                                <span>2人対戦を完全排除</span>
+                            </li>
+                            <li class="flex gap-2">
+                                &#10004;
+                                <span>偶数時は「分身」で奇数化</span>
+                            </li>
+                            <li class="flex gap-2">
+                                &#10004;
+                                <span>2ラウンド目に3のべき乗(3,9,27...)へ自動調整</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Area -->
+            <main class="flex-1 bg-slate-50 relative overflow-hidden">
+                <!-- Empty State -->
+                <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-slate-400">
+                    <div class="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-sm mb-4">
+                        <svg width="80%" height="80%" viewBox="0 0 240 240" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><path d="M203.995,120c0,3.976 -3.228,7.203 -7.203,7.203l-153.583,0c-3.976,0 -7.203,-3.228 -7.203,-7.203c0,-3.976 3.228,-7.203 7.203,-7.203l153.583,0c3.976,0 7.203,3.228 7.203,7.203Z" style="fill:#e2e8f0;"/><rect x="112.804" y="55.205" width="14.391" height="129.59" style="fill:#e2e8f0;"/><path d="M50.395,119.992l0,57.608c0,3.971 -3.224,7.195 -7.195,7.195c-3.971,0 -7.195,-3.224 -7.195,-7.195l0,-57.608c0,-3.971 3.224,-7.195 7.195,-7.195c3.971,0 7.195,3.224 7.195,7.195Z" style="fill:#e2e8f0;"/><path d="M203.995,119.992l0,57.608c0,3.971 -3.224,7.195 -7.195,7.195c-3.971,0 -7.195,-3.224 -7.195,-7.195l0,-57.608c0,-3.971 3.224,-7.195 7.195,-7.195c3.971,0 7.195,3.224 7.195,7.195Z" style="fill:#e2e8f0;"/><circle cx="43.2" cy="184.795" r="28.802" style="fill:#e2e8f0;"/><circle cx="120" cy="184.795" r="28.802" style="fill:#e2e8f0;"/><circle cx="196.8" cy="184.795" r="28.802" style="fill:#e2e8f0;"/><circle cx="120" cy="55.205" r="28.802" style="fill:#e2e8f0;"/></svg>
+                    </div>
+                    <p class="font-medium">参加者を入力して生成ボタンを押してください</p>
+                </div>
+
+                <!-- Bracket Container -->
+                <div id="bracketContainer" class="bracket-container hidden">
+                    <!-- Javascript populates this -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // --- Constants & Global State ---
+        let tournamentData = null; // { rounds: [], info: {} }
+
+        // --- DOM Elements ---
+        const els = {
+            input: document.getElementById('inputNames'),
+            countBadge: document.getElementById('countBadge'),
+            btnGenerate: document.getElementById('btnGenerate'),
+            container: document.getElementById('bracketContainer'),
+            empty: document.getElementById('emptyState'),
+            statusMsg: document.getElementById('statusMessage'),
+            statusText: document.getElementById('statusText'),
+            btnSave: document.getElementById('btnSave'),
+            fileInput: document.getElementById('fileInput'),
+            isShuffle: document.getElementById('isShuffle')
+        };
+
+        // --- Utils ---
+        const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
+        
+        const sanitaize = (str) => {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#x60;');
+        };
+        
+        const getTargetPowerOf3 = (n) => {
+            let p = 1;
+            while (p * 3 <= n) p *= 3;
+            return p;
+        };
+
+        const isPowerOf3 = (n) => {
+            let p = 1;
+            while (p < n) p *= 3;
+            return p === n;
+        };
+
+        // --- Core Logic: Structure Generation ---
+
+        function generateStructure(rawNames) {
+            let players = rawNames.map(n => ({ name: n, isClone: false, id: crypto.randomUUID() }));
+            
+            // 1. 偶数なら分身を作成して奇数にする
+            let message = "";
+            if (players.length % 2 === 0) {
+                const original = players[0];
+                const clone = { 
+                    name: original.name, 
+                    isClone: true, 
+                    id: crypto.randomUUID() 
+                };
+                players.push(clone);
+                message = `参加者が偶数(${rawNames.length}名)のため、"${original.name}"の分身を作成し${players.length}名で開始します。`;
+            }
+
+            // シャッフル
+            if (els.isShuffle.checked) players = shuffle(players);
+
+            // ラウンド構築用変数
+            let currentPlayers = players.map(p => ({ ...p, sourceMatchId: null })); // 現在生き残っているプレイヤー
+            const rounds = [];
+            let roundCount = 1;
+
+            // 2. 優勝者(1名)が決まるまでループ
+            while (currentPlayers.length > 1) {
+                const N = currentPlayers.length;
+                let matchCount = 0;
+                let byeCount = 0;
+
+                // ロジック: 現在人数Nを、次の3のべき乗Tまで減らす
+                // 1試合につき2人減る (3人参加->1人残り)
+                // 減らすべき人数 D = N - T
+                // 必要な試合数 M = D / 2
+                
+                if (isPowerOf3(N)) {
+                    // 既に3のべき乗(9, 27など)なら、全員で試合を行う
+                    matchCount = N / 3;
+                    byeCount = 0;
+                } else {
+                    // 調整フェーズ
+                    const target = getTargetPowerOf3(N); // 奇数を返す
+                    const diff = N - target; // Nは調整されて奇数なので引けば偶数になる
+                    matchCount = diff / 2; // つまり割り切れる
+                    byeCount = N - (matchCount * 3);
+                }
+
+                // マッチ作成
+                const roundMatches = [];
+                let pIdx = 0;
+
+                // 対戦枠 (3人)
+                for (let i = 0; i < matchCount; i++) {
+                    const matchId = `R${roundCount}-M${i}`;
+                    const p1 = currentPlayers[pIdx++];
+                    const p2 = currentPlayers[pIdx++];
+                    const p3 = currentPlayers[pIdx++];
+                    
+                    roundMatches.push({
+                        id: matchId,
+                        players: [p1, p2, p3],
+                        winner: null
+                    });
+                }
+
+                // 勝ち上がり予定枠 (Placeholder)
+                const matchWinners = roundMatches.map(m => ({
+                    name: null, // 未定
+                    isClone: false,
+                    id: null,
+                    sourceMatchId: m.id, // この試合の勝者がここに来る
+                    isWinnerPlaceholder: true
+                }));
+
+                // シード選手 (そのまま次へ)
+                const byePlayers = [];
+                for (let i = 0; i < byeCount; i++) {
+                    const byePlayer = currentPlayers[pIdx++];
+                    byePlayers.push({
+                        ...byePlayer,
+                        sourceMatchId: `BYE-R${roundCount}-${i}` // 追跡用
+                    });
+                }
+
+                const nextRoundPlayers = interleavePlayers_SeedFirst(matchWinners, byePlayers);
+                
+                rounds.push({
+                    id: roundCount,
+                    matches: roundMatches,
+                    byes: byePlayers.map(bp => currentPlayers.find(p => p.id === bp.id) || bp)
+                });
+
+                // ループ更新
+                currentPlayers = nextRoundPlayers;
+                roundCount++;
+            }
+
+            return { rounds, message, winner: null };
+        }
+        // ===== シード優先配置(強豪分散) =====
+        function interleavePlayers_SeedFirst(matchWinners, byePlayers) {
+            const nextRoundPlayers = [];
+            const total = matchWinners.length + byePlayers.length;
+            
+            if (byePlayers.length === 0) {
+                return [...matchWinners];
+            }
+            if (matchWinners.length === 0) {
+                return [...byePlayers];
+            }
+            
+            // シード選手を均等間隔で配置
+            const interval = total / byePlayers.length;
+            let matchIdx = 0;
+            let byeIdx = 0;
+            
+            for (let i = 0; i < total; i++) {
+                const shouldPlaceSeed = Math.floor(i / interval) === byeIdx && byeIdx < byePlayers.length;
+                
+                if (shouldPlaceSeed) {
+                    nextRoundPlayers.push(byePlayers[byeIdx++]);
+                } else if (matchIdx < matchWinners.length) {
+                    nextRoundPlayers.push(matchWinners[matchIdx++]);
+                }
+            }
+            
+            return nextRoundPlayers;
+        }
+        // ===== 比率に基づいた均等配置 =====
+        function interleavePlayers_Proportional(matchWinners, byePlayers) {
+            const nextRoundPlayers = [];
+            const total = matchWinners.length + byePlayers.length;
+            
+            let matchIdx = 0;
+            let byeIdx = 0;
+            
+            for (let i = 0; i < total; i++) {
+                // どちらを配置すべきか、現在の進捗率で判定
+                const matchProgress = matchIdx / matchWinners.length;
+                const byeProgress = byeIdx / byePlayers.length;
+                
+                if (matchIdx < matchWinners.length && 
+                    (byeIdx >= byePlayers.length || matchProgress <= byeProgress)) {
+                    nextRoundPlayers.push(matchWinners[matchIdx++]);
+                } else if (byeIdx < byePlayers.length) {
+                    nextRoundPlayers.push(byePlayers[byeIdx++]);
+                }
+            }
+            
+            return nextRoundPlayers;
+        }
+        
+        
+        // --- Interaction Logic ---
+
+        function handleMatchClick(roundIndex, matchIndex, playerIndex) {
+            const round = tournamentData.rounds[roundIndex];
+            const match = round.matches[matchIndex];
+            const clickedPlayer = match.players[playerIndex];
+
+            // Toggle Winner
+            if (match.winner && match.winner.id === clickedPlayer.id) {
+                match.winner = null; // Cancel
+            } else {
+                match.winner = clickedPlayer;
+            }
+
+            // Propagate changes
+            updateBracketState();
+            renderBracket();
+            saveState();
+        }
+
+        function updateBracketState() {
+            // ラウンド1から順に、勝者を次のラウンドのsourceMatchIdを持つプレイヤーに埋め込む
+            for (let r = 0; r < tournamentData.rounds.length - 1; r++) {
+                const currentRound = tournamentData.rounds[r];
+                const nextRound = tournamentData.rounds[r + 1];
+
+                // このラウンドの全マッチを確認
+                currentRound.matches.forEach(match => {
+                    if (!match.winner) {
+                        // 勝者がいない場合、次ラウンドの該当スロットをクリア
+                        clearNextRoundSlot(nextRound, match.id);
+                        return;
+                    }
+
+                    // 勝者がいる場合、次ラウンドを探して埋める
+                    fillNextRoundSlot(nextRound, match.id, match.winner);
+                });
+            }
+            
+            // 最終勝者判定
+            const lastRound = tournamentData.rounds[tournamentData.rounds.length - 1];
+            if (lastRound.matches.length === 1 && lastRound.matches[0].winner) {
+                tournamentData.winner = lastRound.matches[0].winner;
+            } else {
+                tournamentData.winner = null;
+            }
+        }
+
+        function fillNextRoundSlot(nextRound, sourceMatchId, winner) {
+            // マッチ内のプレイヤーを探す
+            for (let m of nextRound.matches) {
+                for (let i = 0; i < 3; i++) {
+                    if (m.players[i].sourceMatchId === sourceMatchId) {
+                        m.players[i] = { ...winner, sourceMatchId: sourceMatchId, isWinnerPlaceholder: false };
+                        // もしこのマッチで既に勝者が決まっていて、その勝者が書き換わる場合(ID不一致)、リセットが必要
+                        if (m.winner && m.winner.sourceMatchId === sourceMatchId && m.winner.id !== winner.id) {
+                            m.winner = null; // リセット
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
+        function clearNextRoundSlot(nextRound, sourceMatchId) {
+            for (let m of nextRound.matches) {
+                for (let i = 0; i < 3; i++) {
+                    if (m.players[i].sourceMatchId === sourceMatchId) {
+                        // リセット：Placeholderに戻す
+                        const wasWinner = (m.winner && m.winner.sourceMatchId === sourceMatchId);
+                        m.players[i] = { 
+                            name: null, id: null, isClone: false, 
+                            sourceMatchId: sourceMatchId, isWinnerPlaceholder: true 
+                        };
+                        if (wasWinner) m.winner = null;
+                        return;
+                    }
+                }
+            }
+        }
+
+        // --- UI Rendering ---
+
+        function renderBracket() {
+            if (!tournamentData) return;
+            const container = els.container;
+            container.innerHTML = '';
+            els.empty.classList.add('hidden');
+            els.container.classList.remove('hidden');
+
+            // Status Message
+            if (tournamentData.message) {
+                els.statusText.textContent = tournamentData.message;
+                els.statusMsg.classList.remove('hidden');
+                els.statusMsg.className = "mb-4 p-3 rounded text-xs flex items-start gap-2 bg-indigo-50 text-indigo-700 border border-indigo-100";
+            } else {
+                els.statusMsg.classList.add('hidden');
+            }
+
+            // Render Columns
+            tournamentData.rounds.forEach((round, rIdx) => {
+                const col = document.createElement('div');
+                col.className = 'round-column';
+                
+                // Header
+                const isFinal = rIdx === tournamentData.rounds.length - 1;
+                const header = document.createElement('div');
+                header.className = 'w-full sticky top-0 bg-[#f8fafc] py-2 z-20 border-b border-slate-200';
+                header.innerHTML = `<h3 class="font-bold text-slate-400 text-xs tracking-widest uppercase text-center">${isFinal ? 'FINAL' : `ROUND ${rIdx + 1}`}</h3>`;
+                col.appendChild(header);
+
+                // Matches
+                round.matches.forEach((match, mIdx) => {
+                    const card = document.createElement('div');
+                    card.className = 'match-card';
+                    
+                    // Match Info Header
+                    const info = document.createElement('div');
+                    info.className = 'match-info';
+                    info.innerHTML = `<span>M-${rIdx+1}-${mIdx+1}</span> <span>3 Players</span>`;
+                    card.appendChild(info);
+
+                    // Players
+                    match.players.forEach((p, pIdx) => {
+                        const slot = document.createElement('div');
+                        const isPlaceholder = p.isWinnerPlaceholder;
+                        const isWinner = match.winner && match.winner.id === p.id;
+                        
+                        let slotClass = 'player-slot';
+                        if (isWinner) slotClass += ' winner';
+                        if (p.isClone) slotClass += ' clone';
+                        if (isPlaceholder) slotClass += ' empty';
+
+                        slot.className = slotClass;
+
+                        // Name Display
+                        let nameHtml = '';
+                        if (isPlaceholder) {
+                            let matchInfo = 'Waiting for winner...';
+                            if (rIdx > 0 && p.sourceMatchId) { // ラウンド2以降 (rIdx > 0) のみ
+                                // sourceMatchId: R1-M0 の形式を M-1-1 に変換
+                                const parts = p.sourceMatchId.match(/R(\d+)-M(\d+)/);
+                                if (parts) {
+                                    const prevRound = parseInt(parts[1]);
+                                    const prevMatchIdx = parseInt(parts[2]);
+                                    const roomNumber = `M-${prevRound}-${prevMatchIdx + 1}`;
+                                    matchInfo = `【${roomNumber}】Waiting for winner...`;
+                                }
+                            }
+                            nameHtml = `<span class="italic text-xs">${matchInfo}</span>`;
+                        } else {
+                            nameHtml = `<span class="truncate font-medium text-sm">${sanitaize(p.name)}</span>`;
+                        }
+
+                        // Icon
+                        let iconHtml = '';
+                        if (isWinner) iconHtml = '<span class="text-green-500">●</span>';
+                        else if (!isPlaceholder) iconHtml = '<span class="text-gray-500">〇</span>';
+
+                        slot.innerHTML = `
+                            <div class="flex items-center overflow-hidden mr-2">
+                                ${nameHtml}
+                            </div>
+                            <div>${iconHtml}</div>
+                        `;
+
+                        if (!isPlaceholder) {
+                            slot.onclick = () => handleMatchClick(rIdx, mIdx, pIdx);
+                        }
+                        card.appendChild(slot);
+                    });
+
+                    col.appendChild(card);
+                });
+
+                // Byes Display (Bottom of the round)
+                if (round.byes && round.byes.length > 0) {
+                    const byeContainer = document.createElement('div');
+                    byeContainer.className = 'bye-container mt-8 mx-2 w-full';
+                    
+                    // ヘッダーを独立した要素として追加
+                    const byeHeader = document.createElement('div');
+                    byeHeader.className = 'bye-header';
+                    byeHeader.textContent = 'BYES (NEXT ROUND)';
+                    byeContainer.appendChild(byeHeader);
+
+                    round.byes.forEach(p => {
+                        const byeRow = document.createElement('div');
+                        byeRow.className = 'bye-item';
+                        
+                        // アイコンは使わず、テキストとして要素内に含めます
+                        const cloneTag = p.isClone 
+                            ? '<span class="text-[10px] bg-violet-100 text-violet-600 px-1 rounded ml-1">分身</span>' 
+                            : '';
+
+                        byeRow.innerHTML = `${sanitaize(p.name)} ${cloneTag}`;
+
+                        byeContainer.appendChild(byeRow);
+                    });
+                    col.appendChild(byeContainer);
+                }
+
+                // Final Champion Card
+                if (isFinal && tournamentData.winner) {
+                    const w = tournamentData.winner;
+                    const champ = document.createElement('div');
+                    champ.className = 'champion-card rounded-xl p-6 text-center shadow-xl mx-2 w-[300px]';
+                    champ.innerHTML = `
+                        <div class="text-yellow-500 text-7xl mb-2">&#x1f3c6;</div>
+                        <div class="text-xs font-bold text-yellow-600 uppercase tracking-widest mb-1">Champion</div>
+                        <div class="font-bold text-xl text-slate-800 ${w.isClone ? 'text-violet-700' : ''}">${sanitaize(w.name)}</div>
+                        ${w.isClone ? '<span class="inline-block text-[10px] bg-violet-100 text-violet-600 px-2 py-0.5 rounded mt-1">分身</span>' : ''}
+                    `;
+                    col.appendChild(champ);
+                }
+
+                container.appendChild(col);
+            });
+        }
+
+        // --- Event Listeners ---
+
+        els.input.addEventListener('input', () => {
+            const lines = els.input.value.split('\n').filter(l => l.trim());
+            els.countBadge.textContent = `${lines.length}名`;
+        });
+
+        els.btnGenerate.addEventListener('click', () => {
+            const lines = els.input.value.split('\n').map(l => l.trim()).filter(l => l);
+            if (lines.length < 3) {
+                alert('最低3名の参加者が必要です');
+                return;
+            }
+            tournamentData = generateStructure(lines);
+            renderBracket();
+            els.btnSave.disabled = false;
+            els.btnSave.classList.remove('bg-slate-700', 'text-slate-500', 'cursor-not-allowed');
+            els.btnSave.classList.add('bg-indigo-600', 'hover:bg-indigo-500', 'text-white');
+        });
+
+        function saveState() {
+            // Can be used to save to localStorage if needed
+            console.log(tournamentData);
+        }
+
+        els.btnSave.addEventListener('click', () => {
+            if (!tournamentData) return;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tournamentData));
+            const dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", `tournament_3p_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            dlAnchor.remove();
+        });
+
+        els.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const json = JSON.parse(event.target.result);
+                    if (!json.rounds) throw new Error();
+                    tournamentData = json;
+                    renderBracket();
+                    els.btnSave.disabled = false;
+                    els.btnSave.classList.remove('bg-slate-700', 'text-slate-500', 'cursor-not-allowed');
+                    els.btnSave.classList.add('bg-indigo-600', 'hover:bg-indigo-500', 'text-white');
+                } catch(err) {
+                    alert('ファイルの読み込みに失敗しました');
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+
+    </script>
+</body>
+</html>
