@@ -338,7 +338,8 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+	(function() {
         // --- Constants & Global State ---
         let tournamentData = null; // { rounds: [], info: {} }
 
@@ -357,7 +358,14 @@
         };
 
         // --- Utils ---
-        const shuffle = (arr) => arr.sort(() => Math.random() - 0.5);
+        function shuffle(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; // 要素の交換
+            }
+            return shuffled;
+        }
         
         const sanitaize = (str) => {
             return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/`/g, '&#x60;');
@@ -379,6 +387,9 @@
 
         function generateStructure(rawNames) {
             let players = rawNames.map(n => ({ name: n, isClone: false, id: crypto.randomUUID() }));
+
+            // シャッフル
+            if (els.isShuffle.checked) players = shuffle(players);
             
             // 1. 偶数なら分身を作成して奇数にする
             let message = "";
@@ -392,9 +403,6 @@
                 players.push(clone);
                 message = `参加者が偶数(${rawNames.length}名)のため、"${original.name}"の分身を作成し${players.length}名で開始します。`;
             }
-
-            // シャッフル
-            if (els.isShuffle.checked) players = shuffle(players);
 
             // ラウンド構築用変数
             let currentPlayers = players.map(p => ({ ...p, sourceMatchId: null })); // 現在生き残っているプレイヤー
@@ -771,8 +779,8 @@
         });
 
         function saveState() {
-            // Can be used to save to localStorage if needed
-            console.log(tournamentData);
+            // あとで追加
+            // console.log(tournamentData);
         }
 
         els.btnSave.addEventListener('click', () => {
@@ -806,7 +814,7 @@
             reader.readAsText(file);
             e.target.value = '';
         });
-
+	})();
     </script>
 </body>
 </html>
